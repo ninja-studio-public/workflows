@@ -1,2 +1,2 @@
 # actions
-contains reusable Gothub workflows
+contains reusable Github workflows
