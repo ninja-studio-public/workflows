@@ -64,8 +64,10 @@ jobs:
         run: pip install boto3
 
       - name: Run get_active_deployments_ec2.py
+        env:
+          OUTPUT_DIR: ${{ github.workspace }}/output      
         run: |
-          mkdir -p app/output
+          mkdir -p app/output          
           python scripts/aws/deployments/get_active_deployments_ec2.py \
             "${{ inputs.aws_region }}" \
             "${{ inputs.microservices }}" \
@@ -75,5 +77,5 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: active-deployments
-          path: app/output/active-deployments.json
+          path: ${{ github.workspace }}/output/active-deployments.json
           retention-days: 1
