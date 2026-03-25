@@ -1,0 +1,63 @@
+name: Get Active Deployments (EC2)
+#  workflow_version: 1.0.0
+
+on:
+  workflow_call:
+    secrets:
+      AWS_ACCOUNT_ID:
+        required: true
+    inputs: {}  # AWS_REGION, MICROSERVICES, ENVIRONMENTS passed as env vars from caller
+
+jobs:
+  get-active-deployments:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - name: Validate inputs
+        run: |
+          if [[ -z "${{ env.MICROSERVICES }}" ]]; then
+            echo "::error::MICROSERVICES is empty or not set"
+            exit 1
+          fi
+          if [[ -z "${{ env.ENVIRONMENTS }}" ]]; then
+            echo "::error::ENVIRONMENTS is empty or not set — check that EC2 instance IDs are configured and not set to 'todo'"
+            exit 1
+          fi
+
+      - name: Checkout scripts repo
+        uses: actions/checkout@v6
+        with:
+          repository: ${{ github.repository_owner }}/scripts
+          path: scripts
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/github-actions-role
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: pip install boto3
+
+      - name: Run get_active_deployments_ec2.py
+        run: |
+          mkdir -p app/output
+          python scripts/aws/deployments/get_active_deployments_ec2.py \
+            "${{ env.AWS_REGION }}" \
+            "${{ env.MICROSERVICES }}" \
+            ${{ env.ENVIRONMENTS }}
+
+      - name: Upload output artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: active-deployments
+          path: app/output/active-deployments.json
+          retention-days: 1
