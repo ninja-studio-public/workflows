@@ -25,6 +25,13 @@ jobs:
       contents: read
 
     steps:
+
+      - name: Debug received inputs
+        run: |
+          echo "aws_region: '${{ inputs.aws_region }}'"
+          echo "microservices: '${{ inputs.microservices }}'"
+          echo "environments: '${{ inputs.environments }}'"    
+          
       - name: Validate inputs
         run: |
           if [[ -z "${{ env.MICROSERVICES }}" ]]; then
@@ -35,12 +42,6 @@ jobs:
             echo "::error::ENVIRONMENTS is empty or not set — check that EC2 instance IDs are configured and not set to 'todo'"
             exit 1
           fi
-
-      - name: Debug received inputs
-        run: |
-          echo "aws_region: '${{ inputs.aws_region }}'"
-          echo "microservices: '${{ inputs.microservices }}'"
-          echo "environments: '${{ inputs.environments }}'"          
 
       - name: Checkout scripts repo
         uses: actions/checkout@v6
