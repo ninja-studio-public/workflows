@@ -43,7 +43,7 @@ on:
 
 jobs:
   deploy:
-    name: Deploy to Docker Swarm via SSM
+    name: Deploy to Docker Swarm via OIDC
     runs-on: ubuntu-latest
     permissions:
       id-token: write
