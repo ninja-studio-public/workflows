@@ -143,30 +143,30 @@ jobs:
 
       - name: Print summary
         run: |
-          echo "========================================"
-          echo "         CI Summary - ${{ inputs.name }}"
-          echo "========================================"
-          pwd
-          echo ""
-          echo "Task Results:"
+          log() { echo "$1" | tee -a $GITHUB_STEP_SUMMARY; }
+          log "========================================"
+          log "         CI Summary - ${{ inputs.name }}"
+          log "========================================"
+          log ""
+          log "Task Results:"
           for f in results/*.txt; do
             [ -f "$f" ] || continue
             ENTRY=$(cat "$f")
             TASK_NAME="${ENTRY%%=*}"
             TASK_RESULT="${ENTRY##*=}"
             if [ "$TASK_RESULT" = "success" ]; then
-              echo "  ✅ ${TASK_NAME}"
+              log "  ✅ ${TASK_NAME}"
             else
-              echo "  ❌ ${TASK_NAME}"
+              log "  ❌ ${TASK_NAME}"
             fi
           done
 
           MISSING='${{ needs.detect-tasks.outputs.missing-tasks }}'
           if [ "$MISSING" != "[]" ] && [ -n "$MISSING" ]; then
-            echo ""
-            echo "Not defined in Taskfile (skipped):"
-            echo "$MISSING" | jq -r '.[]' | while read -r t; do
-              echo "  ⚠️  ${t}"
+            log ""
+            log "Not defined in Taskfile (skipped):"
+            log "$MISSING" | jq -r '.[]' | while read -r t; do
+              log "  ⚠️  ${t}"
             done
           fi
 
