@@ -116,7 +116,12 @@ jobs:
         if: always()
         run: |
           RESULT="${{ steps.run-task.outcome }}"
+          echo $RESULT
           echo "${{ matrix.task-name }}=${RESULT}" > result.txt
+          pwd
+          ls -a
+          cat result.txt
+          
 
       - name: Upload result artifact
         if: always()
