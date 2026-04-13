@@ -117,18 +117,16 @@ jobs:
         run: |
           RESULT="${{ steps.run-task.outcome }}"
           echo $RESULT
-          echo "${{ matrix.task-name }}=${RESULT}" > result.txt
-          pwd
-          ls -a
-          cat result.txt
-          
+          mkdir -p results
+          echo "${{ matrix.task-name }}=${RESULT}" > ${{ matrix.task-name }}.txt
+          cat ${{ matrix.task-name }}.txt
 
       - name: Upload result artifact
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: task-result-${{ matrix.task-name }}
-          path: ${{ inputs.working-directory }}/result.txt
+          path: ${{ inputs.working-directory }}/${{ matrix.task-name }}.txt
 
   summary:
     name: Summary
@@ -148,7 +146,7 @@ jobs:
           echo "========================================"
           echo "         CI Summary - ${{ inputs.name }}"
           echo "========================================"
-
+          pwd
           echo ""
           echo "Task Results:"
           for f in results/*.txt; do
