@@ -75,8 +75,13 @@ jobs:
             --argjson found "$FOUND_TASKS" \
             '$requested - $found')
 
-          echo "tasks=${FOUND_TASKS}" >> "$GITHUB_OUTPUT"
-          echo "missing-tasks=${MISSING_TASKS}" >> "$GITHUB_OUTPUT"
+          echo "tasks<<EOF" >> "$GITHUB_OUTPUT"
+          echo "${FOUND_TASKS}" >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
+          
+          echo "missing-tasks<<EOF" >> "$GITHUB_OUTPUT"
+          echo "${MISSING_TASKS}" >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
 
   tasks:
     needs: [detect-tasks]
