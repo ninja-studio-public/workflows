@@ -1,0 +1,165 @@
+name: CI
+#  workflow_version: 1.2.0 Dated 13 April 2026
+
+on:
+  workflow_call:
+    inputs:
+      name:
+        description: Name of the service or project.
+        required: true
+        type: string
+      taskfile:
+        description: Path to the taskfile.
+        required: false
+        default: Taskfile.yaml
+        type: string
+      node-version:
+        description: Setup node for jobs.
+        required: false
+        type: string
+      working-directory:
+        description: Set the relative working directory for the workflow.
+        type: string
+        required: false
+      extra-tasks:
+        description: Comma-separated list of additional tasks to run on top of the defaults.
+        required: false
+        default: ""
+        type: string
+
+jobs:
+  detect-tasks:
+    name: Detect Tasks
+    runs-on: ubuntu-latest
+    outputs:
+      tasks: ${{ steps.detect-tasks.outputs.tasks }}
+      missing-tasks: ${{ steps.detect-tasks.outputs.missing-tasks }}
+    defaults:
+      run:
+        working-directory: ${{ inputs.working-directory }}
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Install go-task (taskfile.dev)
+        uses: arduino/setup-task@v2
+
+      - name: Output tasks
+        id: detect-tasks
+        run: |
+          DEFAULT_TASKS="ci-build,ci-lint,ci-test-unit,ci-test-integration,ci-test-e2e"
+          EXTRA_TASKS="${{ inputs.extra-tasks }}"
+
+          # Merge default and extra tasks into a single deduplicated list
+          ALL_TASKS=$(echo "${DEFAULT_TASKS},${EXTRA_TASKS}" \
+            | tr ',' '\n' \
+            | sed '/^$/d' \
+            | sort -u \
+            | tr '\n' ',' \
+            | sed 's/,$//')
+
+          # Get all tasks defined in the Taskfile
+          DEFINED_TASKS=$(task -t ${{ inputs.taskfile }} --list-all -j)
+
+          # Build JSON array of requested task names
+          REQUESTED_JSON=$(echo "$ALL_TASKS" | tr ',' '\n' | jq -R . | jq -sc .)
+
+          # Filter to only tasks that are actually defined in the Taskfile
+          FOUND_TASKS=$(echo "$DEFINED_TASKS" | jq -c \
+            --argjson requested "$REQUESTED_JSON" \
+            '.tasks | map(select(.name as $n | $requested | index($n))) | map(.name)')
+
+          # Compute missing = requested - found
+          MISSING_TASKS=$(jq -n \
+            --argjson requested "$REQUESTED_JSON" \
+            --argjson found "$FOUND_TASKS" \
+            '$requested - $found')
+
+          echo "tasks=${FOUND_TASKS}" >> "$GITHUB_OUTPUT"
+          echo "missing-tasks=${MISSING_TASKS}" >> "$GITHUB_OUTPUT"
+
+  tasks:
+    needs: [detect-tasks]
+    runs-on: ubuntu-latest
+    if: ${{ needs.detect-tasks.outputs.tasks != '[]' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        task-name: ${{ fromJson(needs.detect-tasks.outputs.tasks) }}
+    name: Run ${{ matrix.task-name }}
+    defaults:
+      run:
+        working-directory: ${{ inputs.working-directory }}
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Install Node.js ${{ inputs.node-version }}
+        if: ${{ inputs.node-version != '' }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ inputs.node-version }}
+
+      - name: Install go-task (taskfile.dev)
+        uses: arduino/setup-task@v2
+
+      - name: Run ${{ matrix.task-name }}
+        id: run-task
+        run: task -t ${{ inputs.taskfile }} ${{ matrix.task-name }}
+
+      - name: Report result
+        if: always()
+        run: |
+          RESULT="${{ steps.run-task.outcome }}"
+          echo "${{ matrix.task-name }}=${RESULT}" > result.txt
+
+      - name: Upload result artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: task-result-${{ matrix.task-name }}
+          path: result.txt
+
+  summary:
+    name: Summary
+    runs-on: ubuntu-latest
+    if: always()
+    needs: [detect-tasks, tasks]
+    steps:
+      - name: Download all result artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: task-result-*
+          merge-multiple: true
+          path: results/
+
+      - name: Print summary
+        run: |
+          echo "========================================"
+          echo "         CI Summary - ${{ inputs.name }}"
+          echo "========================================"
+
+          echo ""
+          echo "Task Results:"
+          for f in results/*.txt; do
+            [ -f "$f" ] || continue
+            ENTRY=$(cat "$f")
+            TASK_NAME="${ENTRY%%=*}"
+            TASK_RESULT="${ENTRY##*=}"
+            if [ "$TASK_RESULT" = "success" ]; then
+              echo "  ✅ ${TASK_NAME}"
+            else
+              echo "  ❌ ${TASK_NAME}"
+            fi
+          done
+
+          MISSING='${{ needs.detect-tasks.outputs.missing-tasks }}'
+          if [ "$MISSING" != "[]" ] && [ -n "$MISSING" ]; then
+            echo ""
+            echo "Not defined in Taskfile (skipped):"
+            echo "$MISSING" | jq -r '.[]' | while read -r t; do
+              echo "  ⚠️  ${t}"
+            done
+          fi
+
+          echo "========================================"
