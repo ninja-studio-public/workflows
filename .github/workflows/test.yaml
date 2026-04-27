@@ -1,0 +1,82 @@
+name: test.yaml
+#  workflow_version: 1.1.0 Dated 27 April 2026
+
+run-name: "testing build-push with arm runner"
+
+on:
+  workflow_call:
+    inputs:
+      repository:
+        description: The repository name. This is used for code checkout as well as as a prefix for the name of the image. For example, "project-tango".
+        required: true
+        type: string
+      service:
+        description: The name of the service (frontend, backend etc). This is used to guide build context.
+        required: true
+        type: string
+      version:
+        description: The version of the image. This is used to tag the image.
+        required: true
+        type: string
+      use_root_context:
+        description: 'Use root context for shared resources'
+        required: false
+        type: boolean
+        default: false      
+      platforms:
+        description: Comma-separated list of target platforms. For example, "linux/amd64,linux/arm64".
+        required: false
+        type: string
+        default: "linux/arm64"        
+         
+         
+env:  
+  IMAGE_NAME: ${{ inputs.repository }}/${{ inputs.service }}
+permissions:
+  contents: write
+  packages: write
+  pull-requests: read
+jobs:
+  build-and-push:
+    name: Build Container Image and Push to GHCR
+    runs-on: runs-on,runner=2cpu-linux-arm64,run-id=${{ github.run_id }}
+        
+    steps:
+      - name: Checkout calling repo
+        uses: actions/checkout@v6
+        with:
+          repository: ${{ inputs.repository }}
+      - name: Log in to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Case handling for image name
+              #required for repos with uppercase letters in their name
+        id: image-name
+        run: |
+          lower_image_name=$(echo "${IMAGE_NAME}" | tr '[:upper:]' '[:lower:]')
+          echo "lower_image_name=${lower_image_name}" >> $GITHUB_OUTPUT
+      - name: Print Image Tags and platforms
+        run: |
+          echo "Image will be tagged as:"
+          echo "${{ steps.image-name.outputs.lower_image_name }}:${{ inputs.version }}"
+          echo "${{ steps.image-name.outputs.lower_image_name }}:latest"
+          echo "Docker platforms for which image is being created:"
+          echo "${{ inputs.platforms }}"
+
+      - name: Build and push docker image to ghcr.io
+        uses: docker/build-push-action@v7
+        with:
+          context: ${{ inputs.use_root_context == true && '.' || format('./{0}', inputs.service) }}
+          file: ./${{ inputs.service }}/Dockerfile
+          push: true
+          platforms: ${{ inputs.platforms }}          
+          tags: |
+            ghcr.io/${{ steps.image-name.outputs.lower_image_name }}:${{ inputs.version }}
+            ghcr.io/${{ steps.image-name.outputs.lower_image_name }}:latest
