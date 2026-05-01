@@ -1,6 +1,6 @@
 name: Publish Multi-Platform Container Image to GHCR
  
-# workflow_version: 1.4.0 Dated 01 May 2026
+# workflow_version: 1.5.0 Dated 01 May 2026
 # Defaults to creating both linux/amd64 and linux/arm64 docker images
 
 on:
@@ -32,7 +32,7 @@ on:
         description: 'Maximum number of minutes the build-and-push step is allowed to run before being cancelled. Prevents runaway runner usage. Defaults to 60 minutes.'
         required: false
         type: number
-        default: 1
+        default: 2
          
          
 env:  
@@ -78,6 +78,7 @@ jobs:
           echo "${{ inputs.platforms }}"
 
       - name: Build and push docker image to ghcr.io
+        id: build
         uses: docker/build-push-action@v7
         timeout-minutes: ${{ inputs.build_timeout_minutes }}
         with:
@@ -89,10 +90,19 @@ jobs:
             ghcr.io/${{ steps.image-name.outputs.lower_image_name }}:${{ inputs.version }}
             ghcr.io/${{ steps.image-name.outputs.lower_image_name }}:latest
 
-      - name: Warn on build cancellation
-        if: cancelled()
+      - name: Report build outcome on failure
+        if: steps.build.outcome == 'cancelled' || steps.build.outcome == 'timed_out' || steps.build.outcome == 'failure'
         run: |
-          echo "::warning::Build cancelled after ${{ inputs.build_timeout_minutes }} minute(s). The build_timeout_minutes threshold was likely exceeded. Check the build-and-push step logs for details."
-          echo "## Build Cancelled" >> $GITHUB_STEP_SUMMARY
-          echo "The **Build and push** step was cancelled after exceeding the **${{ inputs.build_timeout_minutes }} minute** timeout." >> $GITHUB_STEP_SUMMARY
-          echo "No image has been pushed. Review the build logs or increase \`build_timeout_minutes\` in the calling workflow." >> $GITHUB_STEP_SUMMARY
+          echo "::warning::Build step ended with outcome: ${{ steps.build.outcome }}"
+          {
+            echo "> [!CAUTION]"
+            echo "> ❌ The build step ended with outcome: \`${{ steps.build.outcome }}\`"
+            echo ""
+            echo "| Field | Value |"
+            echo "|---|---|"
+            echo "| Outcome | \`${{ steps.build.outcome }}\` |"
+            echo "| Image | \`ghcr.io/${{ steps.image-name.outputs.lower_image_name }}\` |"
+            echo "| Version | \`${{ inputs.version }}\` |"
+            echo "| Platforms | \`${{ inputs.platforms }}\` |"
+            echo "| Timeout limit | \`${{ inputs.build_timeout_minutes }} min\` |"
+          } >> $GITHUB_STEP_SUMMARY
