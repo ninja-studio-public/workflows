@@ -99,13 +99,12 @@ jobs:
         run: |
           echo "::warning::Build job ended with result: ${{ needs.build-and-push.result }}"
           {
-            echo "> [!CAUTION]"
-            echo "> ❌ The build job ended with result: \`${{ needs.build-and-push.result }}\`"
+            echo "> [!CAUTION] The build job ended with result: \`${{ needs.build-and-push.result }}\`"
             echo ""
             echo "| Field | Value |"
             echo "|---|---|"
             echo "| Result | \`${{ needs.build-and-push.result }}\` |"
-            echo "| Version | \`${{ inputs.version }}\` |"
+            echo "| Image Version | \`${{ inputs.version }}\` |"
             echo "| Platforms | \`${{ inputs.platforms }}\` |"
-            echo "| Timeout limit | \`${{ inputs.build_timeout_minutes }} min\` |"
+            echo "| Build Timeout limit | \`${{ inputs.build_timeout_minutes }} min\` |"
           } >> $GITHUB_STEP_SUMMARY
