@@ -32,8 +32,7 @@ on:
         description: 'Maximum number of minutes the build-and-push job is allowed to run before being cancelled. Prevents runaway runner usage. Defaults to 60 minutes.'
         required: false
         type: number
-        default: 1
-         
+        default: 20
          
 env:  
   IMAGE_NAME: ${{ inputs.repository }}/${{ inputs.service }}
@@ -99,7 +98,8 @@ jobs:
         run: |
           echo "::warning::Build job ended with result: ${{ needs.build-and-push.result }}"
           {
-            echo "> [!CAUTION] The build job ended with result: \`${{ needs.build-and-push.result }}\`"
+            echo "> [!CAUTION]"
+            echo "> The build job ended with result: \`${{ needs.build-and-push.result }}\`"
             echo ""
             echo "| Field | Value |"
             echo "|---|---|"
