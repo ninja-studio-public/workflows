@@ -1,6 +1,6 @@
 name: Publish Multi-Platform Container Image to GHCR
  
-# workflow_version: 1.5.0 Dated 01 May 2026
+# workflow_version: 1.6.0 Dated 01 May 2026
 # Defaults to creating both linux/amd64 and linux/arm64 docker images
 
 on:
@@ -29,10 +29,10 @@ on:
         type: string
         default: "linux/amd64,linux/arm64"
       build_timeout_minutes:
-        description: 'Maximum number of minutes the build-and-push step is allowed to run before being cancelled. Prevents runaway runner usage. Defaults to 60 minutes.'
+        description: 'Maximum number of minutes the build-and-push job is allowed to run before being cancelled. Prevents runaway runner usage. Defaults to 60 minutes.'
         required: false
         type: number
-        default: 2
+        default: 1
          
          
 env:  
@@ -45,6 +45,7 @@ jobs:
   build-and-push:
     name: Build Container Image and Push to GHCR
     runs-on: ubuntu-latest
+    timeout-minutes: ${{ inputs.build_timeout_minutes }}
     steps:
       - name: Checkout calling repo
         uses: actions/checkout@v6
@@ -78,9 +79,7 @@ jobs:
           echo "${{ inputs.platforms }}"
 
       - name: Build and push docker image to ghcr.io
-        id: build
         uses: docker/build-push-action@v7
-        timeout-minutes: ${{ inputs.build_timeout_minutes }}
         with:
           context: ${{ inputs.use_root_context == true && '.' || format('./{0}', inputs.service) }}
           file: ./${{ inputs.service }}/Dockerfile
@@ -90,18 +89,22 @@ jobs:
             ghcr.io/${{ steps.image-name.outputs.lower_image_name }}:${{ inputs.version }}
             ghcr.io/${{ steps.image-name.outputs.lower_image_name }}:latest
 
-      - name: Report build outcome on failure
-        if: steps.build.outcome == 'cancelled' || steps.build.outcome == 'timed_out' || steps.build.outcome == 'failure'
+  report-outcome:
+    name: Report Build Outcome on Failure
+    runs-on: ubuntu-latest
+    needs: build-and-push
+    if: always() && (needs.build-and-push.result == 'failure' || needs.build-and-push.result == 'cancelled' || needs.build-and-push.result == 'timed_out')
+    steps:
+      - name: Write failure summary
         run: |
-          echo "::warning::Build step ended with outcome: ${{ steps.build.outcome }}"
+          echo "::warning::Build job ended with result: ${{ needs.build-and-push.result }}"
           {
             echo "> [!CAUTION]"
-            echo "> ❌ The build step ended with outcome: \`${{ steps.build.outcome }}\`"
+            echo "> ❌ The build job ended with result: \`${{ needs.build-and-push.result }}\`"
             echo ""
             echo "| Field | Value |"
             echo "|---|---|"
-            echo "| Outcome | \`${{ steps.build.outcome }}\` |"
-            echo "| Image | \`ghcr.io/${{ steps.image-name.outputs.lower_image_name }}\` |"
+            echo "| Result | \`${{ needs.build-and-push.result }}\` |"
             echo "| Version | \`${{ inputs.version }}\` |"
             echo "| Platforms | \`${{ inputs.platforms }}\` |"
             echo "| Timeout limit | \`${{ inputs.build_timeout_minutes }} min\` |"
