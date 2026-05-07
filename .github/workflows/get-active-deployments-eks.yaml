@@ -57,6 +57,14 @@ jobs:
             echo "::error::environments is empty or not set — check that EKS cluster names are configured"
             exit 1
           fi
+          if [[ -z "${{ secrets.AWS_ACCOUNT_ID }}" ]]; then
+            echo "::error::AWS_ACCOUNT_ID secret is empty or not passed to this workflow"
+            exit 1
+          fi
+          echo "oidc role arn: 'arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/${{ inputs.oidc-role-name }}'"
+          if [[ -n "${{ inputs.eks-role-name }}" ]]; then
+            echo "eks role arn: 'arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/${{ inputs.eks-role-name }}'"
+          fi
 
       - name: Checkout scripts repo
         uses: actions/checkout@v6
