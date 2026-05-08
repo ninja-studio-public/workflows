@@ -1,0 +1,115 @@
+name: Get Active Deployments (EKS)
+# workflow_version: 1.2.0 Dated 08 May 2026
+
+on:
+  workflow_call:
+    secrets:
+      AWS_ACCOUNT_ID:
+        required: true
+    inputs:
+      aws_region:
+        description: "The AWS region where the EKS clusters are located. eg. ca-central-1"
+        required: true
+        type: string
+      microservices:
+        description: "Comma-separated list of microservice names"
+        required: true
+        type: string
+      environments:
+        description: "Space-separated list of environment:cluster-name pairs. eg. staging:myproject-staging prod:myproject-production"
+        required: true
+        type: string
+      oidc-role-name:
+        description: "The name of the OIDC role to assume. This must be pre-configured in AWS IAM to trust GitHub's OIDC provider."
+        required: false
+        type: string
+        default: "github-actions-role"
+      eks-role-name:
+        description: "The name of the IAM role to assume for EKS cluster access, on top of the base OIDC credentials. Required for cross-account access or when the OIDC role lacks direct EKS permissions. The full ARN is constructed as arn:aws:iam::<AWS_ACCOUNT_ID>:role/<eks-role-name>."
+        required: false
+        type: string
+        default: ""
+
+jobs:
+  get-active-deployments:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+
+      - name: Received inputs
+        run: |
+          echo "aws_region: '${{ inputs.aws_region }}'"
+          echo "microservices: '${{ inputs.microservices }}'"
+          echo "environments: '${{ inputs.environments }}'"
+          echo "oidc-role-name: '${{ inputs.oidc-role-name }}'"
+          echo "eks-role-name: '${{ inputs.eks-role-name }}'"
+
+      - name: Validate inputs
+        run: |
+          if [[ -z "${{ inputs.microservices }}" ]]; then
+            echo "::error::microservices is empty or not set"
+            exit 1
+          fi
+          if [[ -z "${{ inputs.environments }}" ]]; then
+            echo "::error::environments is empty or not set — check that EKS cluster names are configured"
+            exit 1
+          fi
+          if [[ -z "${{ secrets.AWS_ACCOUNT_ID }}" ]]; then
+            echo "::error::AWS_ACCOUNT_ID secret is empty or not passed to this workflow"
+            exit 1
+          fi
+          echo "oidc role arn: 'arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/${{ inputs.oidc-role-name }}'"
+          if [[ -n "${{ inputs.eks-role-name }}" ]]; then
+            echo "eks role arn: 'arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/${{ inputs.eks-role-name }}'"
+          fi
+
+      - name: Checkout scripts repo
+        uses: actions/checkout@v6
+        with:
+          repository: ninja-studio-public/scripts
+          path: scripts
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/${{ inputs.oidc-role-name }}
+          aws-region: ${{ inputs.aws_region }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      - name: Install kubectl
+        uses: azure/setup-kubectl@v4
+        with:
+          version: "v1.34.1"
+
+      - name: Run get_active_deployments_eks.py
+        env:
+          OUTPUT_DIR: ${{ github.workspace }}/output
+          ROLE_ARN: ${{ inputs.eks-role-name != '' && format('arn:aws:iam::{0}:role/{1}', secrets.AWS_ACCOUNT_ID, inputs.eks-role-name) || '' }}
+        run: |
+          mkdir -p ${{ github.workspace }}/output
+          python3 scripts/aws/deployments/get_active_deployments_eks.py \
+            "${{ inputs.aws_region }}" \
+            "${{ inputs.microservices }}" \
+            ${{ inputs.environments }}
+
+      - name: Upload output artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: active-deployments
+          path: ${{ github.workspace }}/output/active-deployments.json
+          retention-days: 1
+
+      - name: Render summary
+        if: always()
+        env:
+          INPUT_FILE: ${{ github.workspace }}/output/active-deployments.json
+        run: |
+          python3 scripts/reporters/render_deployments_summary.py \
+            ${{ inputs.environments }}
