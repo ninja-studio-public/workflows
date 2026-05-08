@@ -1,5 +1,5 @@
 name: Get Active Deployments (EKS)
-# workflow_version: 1.1.0 Dated 07 May 2026
+# workflow_version: 1.2.0 Dated 08 May 2026
 
 on:
   workflow_call:
@@ -105,3 +105,11 @@ jobs:
           name: active-deployments
           path: ${{ github.workspace }}/output/active-deployments.json
           retention-days: 1
+
+      - name: Render summary
+        if: always()
+        env:
+          INPUT_FILE: ${{ github.workspace }}/output/active-deployments.json
+        run: |
+          python3 scripts/reporters/render_deployments_summary.py \
+            ${{ inputs.environments }}
