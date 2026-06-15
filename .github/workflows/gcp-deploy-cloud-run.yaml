@@ -1,0 +1,113 @@
+name: GCP Deploy to Cloud Run
+
+# workflow_version: 1.1.0 Dated 15 June 2026
+# Authenticates to GCP via service account key and deploys a container image to a Cloud Run service.
+# Optionally fetches an env vars file from GCP Secret Manager and passes it to the deploy command.
+
+on:
+  workflow_call:
+    inputs:
+      service-name:
+        description: "The Cloud Run service name to deploy to (e.g. 'kollab-chatbot-staging-v2')."
+        required: true
+        type: string
+      image-path:
+        description: "Full Artifact Registry image path excluding tag (e.g. 'us-central1-docker.pkg.dev/my-project/my-repo/my-service')."
+        required: true
+        type: string
+      version:
+        description: "The image tag to deploy (e.g. 'v1.2.3')."
+        required: true
+        type: string
+      region:
+        description: "GCP region of the Cloud Run service (e.g. 'us-central1')."
+        required: false
+        type: string
+        default: "us-central1"
+      deploy-environment:
+        description: "Deployment environment name (e.g. 'staging', 'production'). Used for logging and to name the temp env vars file."
+        required: true
+        type: string
+      env-vars-secret-name:
+        description: "GCP Secret Manager secret name holding the env vars YAML file contents. If omitted, no env vars file is passed to the deploy command."
+        required: false
+        type: string
+        default: ""
+    secrets:
+      GCP_SA_KEY:
+        required: true
+
+jobs:
+  deploy:
+    name: Deploy to Cloud Run
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Google Auth
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Fetch env vars file from Secret Manager
+        if: ${{ inputs.env-vars-secret-name != '' }}
+        run: |
+          gcloud secrets versions access latest \
+            --secret="${{ inputs.env-vars-secret-name }}" \
+            > /tmp/env_vars.${{ inputs.deploy-environment }}.yaml
+          echo "Env vars file written to /tmp/env_vars.${{ inputs.deploy-environment }}.yaml"
+
+      - name: Deploy to Cloud Run (with env vars file)
+        if: ${{ inputs.env-vars-secret-name != '' }}
+        run: |
+          gcloud run deploy ${{ inputs.service-name }} \
+            --image ${{ inputs.image-path }}:${{ inputs.version }} \
+            --env-vars-file /tmp/env_vars.${{ inputs.deploy-environment }}.yaml \
+            --region ${{ inputs.region }}
+
+      - name: Deploy to Cloud Run (without env vars file)
+        if: ${{ inputs.env-vars-secret-name == '' }}
+        run: |
+          gcloud run deploy ${{ inputs.service-name }} \
+            --image ${{ inputs.image-path }}:${{ inputs.version }} \
+            --region ${{ inputs.region }}
+
+      - name: Print deployment summary
+        run: |
+          {
+            echo "> [!NOTE]"
+            echo "> Deployment completed successfully."
+            echo ""
+            echo "| Field | Value |"
+            echo "|---|---|"
+            echo "| Environment | \`${{ inputs.deploy-environment }}\` |"
+            echo "| Service | \`${{ inputs.service-name }}\` |"
+            echo "| Image | \`${{ inputs.image-path }}:${{ inputs.version }}\` |"
+            echo "| Region | \`${{ inputs.region }}\` |"
+            echo "| Env Vars Secret | \`${{ inputs.env-vars-secret-name != '' && inputs.env-vars-secret-name || 'none' }}\` |"
+            echo "| Actor | \`${{ github.actor }}\` |"
+          } >> $GITHUB_STEP_SUMMARY
+
+  report-outcome:
+    name: Report Deploy Outcome on Failure
+    runs-on: ubuntu-latest
+    needs: deploy
+    if: always() && (needs.deploy.result == 'failure' || needs.deploy.result == 'cancelled')
+    steps:
+      - name: Write failure summary
+        run: |
+          echo "::warning::Deploy job ended with result: ${{ needs.deploy.result }}"
+          {
+            echo "> [!CAUTION]"
+            echo "> The deploy job ended with result: \`${{ needs.deploy.result }}\`"
+            echo ""
+            echo "| Field | Value |"
+            echo "|---|---|"
+            echo "| Result | \`${{ needs.deploy.result }}\` |"
+            echo "| Environment | \`${{ inputs.deploy-environment }}\` |"
+            echo "| Service | \`${{ inputs.service-name }}\` |"
+            echo "| Image | \`${{ inputs.image-path }}:${{ inputs.version }}\` |"
+            echo "| Region | \`${{ inputs.region }}\` |"
+          } >> $GITHUB_STEP_SUMMARY
